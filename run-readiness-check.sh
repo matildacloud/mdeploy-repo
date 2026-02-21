@@ -11,13 +11,15 @@ WINRM_URL="https://github.com/matildacloud/mdeploy-repo/raw/refs/heads/main/winr
 PRECHECK_BIN="discovery-readiness-check-linux-amd64"
 WINRM_BIN="winrm_check-linux-amd64"
 
+DEFAULT_PORT=8080
+PORT="$DEFAULT_PORT"
+
 LOG_FILE="./matilda_precheck_$(date +%Y%m%d_%H%M%S).log"
 
 ############################################
 # Logging Setup
 ############################################
 touch "$LOG_FILE" || { echo "Cannot create log file"; exit 1; }
-
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log() {
@@ -28,6 +30,29 @@ error_exit() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $1"
     exit 1
 }
+
+############################################
+# Argument Parsing
+############################################
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --port)
+            if [[ -n "${2:-}" && "$2" =~ ^[0-9]+$ ]]; then
+                if (( $2 >= 1 && $2 <= 65535 )); then
+                    PORT="$2"
+                    shift 2
+                else
+                    error_exit "Port must be between 1 and 65535"
+                fi
+            else
+                error_exit "--port requires a numeric value"
+            fi
+            ;;
+        *)
+            error_exit "Unknown argument: $1"
+            ;;
+    esac
+done
 
 ############################################
 # Installer
@@ -79,10 +104,10 @@ download_file() {
 ############################################
 # Main Execution
 ############################################
-
 log "=============================================="
 log "Matilda Precheck Utility Setup Started"
 log "Log file: $LOG_FILE"
+log "Using Port: $PORT"
 log "=============================================="
 
 # Ensure curl or wget exists
@@ -90,21 +115,18 @@ if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
     install_downloader
 fi
 
-# Step 1
+# Download binaries
 download_file "$PRECHECK_URL" "$PRECHECK_BIN"
-
-# Step 2
 download_file "$WINRM_URL" "$WINRM_BIN"
 
-# Step 3
+# Set permissions
 log "Setting execute permissions..."
 chmod +x "$PRECHECK_BIN" "$WINRM_BIN" || error_exit "Failed to set execute permissions."
-
 log "Execute permissions set successfully."
 
-# Step 4 - Run Web Mode
-log "Starting Precheck utility in WEB mode..."
+# Start Web Mode
+log "Starting Precheck utility in WEB mode on port $PORT"
 log "HTTP server will remain active until manually stopped (Ctrl+C)"
 log "=============================================="
 
-exec ./"$PRECHECK_BIN" --web
+exec ./"$PRECHECK_BIN" --web --port "$PORT"
